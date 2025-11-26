@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Guardiões do Rio Tocantins — Jogo Multijogador</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    body{font-family:'Press Start 2P',cursive;background:#021a1a;color:#2fbf71}
+    .splash{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000;z-index:999}
+    .splash-container{position:relative;display:inline-block}
+    .splash-img{max-width:600px;display:block;border:4px solid #2fbf71}
+    #startGame{
+      position:absolute; top:42%; left:50%; transform:translateX(-50%);
+      width:300px; height:85px;
+      background:transparent; border:none; color:transparent;
+      cursor:pointer; outline:none;
+    }
+    .wrap{max-width:1000px;margin:20px auto;padding:20px;background:#000;border:4px solid #2fbf71}
+    .topbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    .cats{display:flex;gap:8px;flex-wrap:wrap}
+    .cat{border:2px solid #2fbf71;background:#021a1a;color:#2fbf71;padding:8px 10px;cursor:pointer}
+    .cat.active{background:#2fbf71;color:#000}
+    .players{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .player-card{padding:8px;border:2px solid #2fbf71;display:inline-flex;gap:8px;align-items:center}
+    .player-card.active{background:#2fbf71;color:#000}
+    .question{margin:20px 0;padding:10px;border:2px solid #2fbf71;min-height:64px}
+    .choices{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .choice{padding:10px;border:2px solid #2fbf71;cursor:pointer;background:#021a1a;color:#2fbf71}
+    .choice.correct{border-color:#27ae60;color:#27ae60}
+    .choice.wrong{border-color:#e74c3c;color:#e74c3c}
+    .hint{margin-top:10px;font-size:10px;min-height:28px}
+    .controls{display:flex;gap:10px;margin-top:12px}
+    .panel{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:16px}
+    .events{border:2px solid #2fbf71;padding:10px;max-height:180px;overflow:auto}
+    .events h4{margin:0 0 8px 0;font-size:12px}
+    .event-item{font-size:10px;margin:2px 0}
+    .config{display:flex;gap:8px;align-items:center}
+    .config label{font-size:10px}
+    .config select,.config input{background:#021a1a;color:#2fbf71;border:2px solid #2fbf71;padding:6px}
+    .muted{opacity:.8;font-size:10px}
+    .btn{background:#2fbf71;color:#000;padding:10px 18px;border:none;cursor:pointer}
+  </style>
+</head>
+<body>
+  <!-- Tela de capa -->
+  <div id="splash" class="splash">
+    <div class="splash-container">
+      <img src="assets/capa_jogo.png" alt="Capa do Jogo" class="splash-img">
+      <button id="startGame" aria-label="Jogar"></button>
+    </div>
+  </div>
+
+  <!-- Conteúdo do jogo -->
+  <div class="wrap" style="display:none" id="gameWrap">
+    <div class="topbar">
+      <div class="cats">
+        <button class="cat active" data-cat="facil">Fácil</button>
+        <button class="cat" data-cat="medio">Médio</button>
+        <button class="cat" data-cat="dificil">Difícil</button>
+      </div>
+      <div class="config">
+        <label for="playerCount">Jogadores:</label>
+        <select id="playerCount">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+        <label for="playerNames">Nomes (separados por vírgula):</label>
+        <input id="playerNames" type="text" placeholder="Jogador 1, Jogador 2">
+        <button id="applyPlayers" class="btn">Aplicar</button>
+      </div>
+      <div class="muted" id="turn">Vez: Jogador 1</div>
+    </div>
+
+    <div id="question" class="question">Carregando pergunta...</div>
+    <div id="choices" class="choices"></div>
+    <div id="hint" class="hint">A explicação aparecerá aqui após responder.</div>
+
+    <div class="controls">
+      <button id="next" class="btn" disabled>Próxima</button>
+      <button id="restart" class="btn">Reiniciar</button>
+      <button id="showAnswers" class="btn">Ver respostas</button>
+    </div>
+
+    <div class="panel">
+      <div class="events">
+        <h4>Eventos</h4>
+        <div id="eventsList"></div>
+      </div>
+      <div>
+        <div class="players" id="players"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Sons
+    const sounds = {
+      start: new Audio("assets/sounds/start.wav"),
+      correct: new Audio("assets/sounds/correct.wav"),
+      wrong: new Audio("assets/sounds/wrong.wav"),
+      next: new Audio("assets/sounds/next.wav"),
+      end: new Audio("assets/sounds/end.wav")
+    };
+
+    // Mostrar jogo após clicar em "JOGAR"
+    document.getElementById("startGame").addEventListener("click",()=>{
+      sounds.start.play(); // som da capa
+      document.getElementById("splash").style.display="none";
+      document.getElementById("gameWrap").style.display="block";
+      startCategory("facil");
+    });
+
+   // Banco de perguntas (corrigido)
+    const DB = {
+      facil: [
+        {q:"Qual é o pH considerado neutro em água pura?",opts:["pH 0","pH 7","pH 14","pH 3"],a:1,exp:"pH 7 é a referência para neutralidade da água pura à temperatura padrão."},
+        {q:"Qual gás proveniente de matéria orgânica em decomposição pode causar mau cheiro em rios?",opts:["Oxigênio","Nitrogênio","Metano","Hélio"],a:2,exp:"Metano é produzido por decomposição anaeróbia e tem odor característico quando misturado com outros gases."},
+        {q:"O que significa Esgoto tratado antes de lançado no rio?",opts:["Sem tratamento","Tratamento para reduzir poluentes","Adição de produtos químicos perigosos","Aquecimento do esgoto"],a:1,exp:"Esgoto tratado passou por processos para reduzir matéria orgânica, sólidos e microrganismos antes do lançamento."},
+        {q:"Qual é a principal fonte de nutrientes que causa eutrofização?",opts:["Plástico","Fertilizantes","Areia","Vidro"],a:1,exp:"Fertilizantes ricos em nitrogênio e fósforo aumentam a produção de algas, levando à eutrofização."},
+        {q:"Qual metal pesado é conhecido por ser tóxico em pequenas quantidades?",opts:["Ferro","Cobre","Chumbo","Cálcio"],a:2,exp:"Chumbo é altamente tóxico e pode causar danos neurológicos mesmo em baixas concentrações."},
+        {q:"Qual processo remove bactérias e vírus da água?",opts:["Filtração","Cloração","Sedimentação","Decantação"],a:1,exp:"A cloração é amplamente usada para desinfetar água e eliminar muitos microrganismos patogênicos."},
+        {q:"Qual é a fórmula química da água?",opts:["O2","H2O","CO2","NaCl"],a:1,exp:"H2O representa duas moléculas de hidrogênio ligadas a uma de oxigênio."},
+        {q:"Qual destes é um indicador de baixa qualidade de água?",opts:["Alta biodiversidade","Baixo oxigênio dissolvido","Água cristalina","Presença de peixes nativos"],a:1,exp:"Baixo oxigênio dissolvido geralmente indica poluição e afeta organismos aquáticos."},
+        {q:"O que é biodegradável?",opts:["Algo que não se quebra","Algo que pode ser degradado por microrganismos","Algo tóxico","Algo que brilha"],a:1,exp:"Material biodegradável pode ser degradado por bactérias, fungos e outros organismos."},
+        {q:"Qual atividade humana contribui diretamente para assoreamento?",opts:["Pesca sustentável","Desmatamento","Reciclagem","Plantio de árvores"],a:1,exp:"Desmatamento aumenta erosão do solo, que se deposita nos cursos d'água causando assoreamento."},
+        {q:"Que elemento é essencial para a vida e encontrado em proteínas?",opts:["Nitrogênio","Neônio","Chumbo","Ouro"],a:0,exp:"O nitrogênio faz parte de aminoácidos e bases nitrogenadas, essenciais em proteínas e DNA."},
+        {q:"Qual é a cor típica da água contaminada por certos metais?",opts:["Verde cristalina","Transparente sempre","Marrom/avermelhada","Roxa"],a:2,exp:"Oxidações de ferro e outros metais podem tingir a água de tons avermelhados ou marrons."},
+        {q:"O que significa pH abaixo de 7?",opts:["Ácido","Neutro","Básico","Instável"],a:0,exp:"pH menor que 7 caracteriza soluções ácidas."},
+        {q:"Qual prática reduz a poluição agrícola no rio?",opts:["Uso excessivo de fertilizantes","Cultura de proteção de margem (ripária)","Desmatamento ribeirinho","Queima de resíduos"],a:1,exp:"Faixas ripárias filtram sedimentos e poluentes antes que alcancem o rio."},
+        {q:"Qual instrumento mede o pH da água?",opts:["Higrômetro","pHmetro","Termômetro","Barômetro"],a:1,exp:"pHmetro (ou papel indicador) mede acidez/alkalinidade da água."}
+      ],
+      medio: [
+        {q:"O que é demanda bioquímica de oxigênio (DBO)?",opts:["Quantidade de oxigênio consumida por microrganismos para decompor matéria orgânica","Quantidade de oxigênio em bolhas","Quantidade de oxigênio gerada pela fotossíntese","Quantidade de oxigênio em metais"],a:0,exp:"DBO alta indica muita matéria orgânica que consome oxigênio quando decomposta."},
+        {q:"Qual composto é indicador de contaminação por esgoto doméstico?",opts:["Nitrato/Amônia","Silicato","Argônio","Ozônio"],a:0,exp:"Amônia e nitratos geralmente aumentam em águas afetadas por esgoto e fertilizantes."},
+        {q:"O que causa a formação de zonas mortas em ambientes aquáticos?",opts:["Aumento do oxigênio","Eutrofização levando a anóxia","Menos nutrientes","Aumento da biodiversidade"],a:1,exp:"Quando algas morrem, sua decomposição consome oxigênio, criando zonas com pouco ou nenhum O2."},
+        {q:"Qual tratamento é primário em estações de tratamento de esgoto?",opts:["Cloração","Tratamento biológico","Gradeamento e decantação","Oxidação avançada"],a:2,exp:"Gradeamento e decantação removem sólidos grosseiros e sedimentos como etapa primária."},
+        {q:"O que são microplásticos?",opts:["Pequenas partículas plásticas menores que 5 mm","Bactérias marinhas","Partículas de areia","Algas microscópicas"],a:0,exp:"Microplásticos resultam da quebra de plásticos maiores ou são fabricados pequenos (microesferas)."},
+        {q:"Qual processo químico converte amônia em nitrito e nitrato?",opts:["Nitrificação","Denitrificação","Sulfatação","Floculação"],a:0,exp:"Nitrificação é realizada por bactérias aeróbias que transformam NH3 em NO2- e NO3-."},
+        {q:"Qual metal pode causar problemas neurológicos crônicos?",opts:["Cobre","Mercúrio","Ferro","Zinco"],a:1,exp:"Mercúrio é neurotóxico e pode causar danos severos ao sistema nervoso."},
+        {q:"Como o pH influencia a toxicidade de metais em água?",opts:["pH baixo pode aumentar solubilidade e toxicidade","pH não tem efeito","pH alto sempre neutraliza metais","Metais não dissolvem em água"],a:0,exp:"Em pH ácido muitos metais tornam-se mais solúveis, aumentando a exposição biológica."},
+        {q:"O que são bacias hidrográficas?",opts:["Áreas que drenam água para um mesmo ponto","Lagos artificiais","Tanto faz","Região costeira apenas"],a:0,exp:"Uma bacia coleta água superficial que converge para um rio, lago ou oceano."},
+        {q:"Qual método remove sais dissolvidos da água?",opts:["Filtração simples","Dessalinização por osmose reversa","Cloração","Decantação"],a:1,exp:"Osmose reversa é usada para dessalinizar água removendo sais por membranas semipermeáveis."},
+        {q:"O que é lixiviação?",opts:["Movimentação de substâncias pelo solo até a água subterrânea","Formação de gelo","Evaporação rápida","Queima controlada"],a:0,exp:"Lixiviação transporta fertilizantes e contaminantes para lençóis freáticos."},
+        {q:"Qual composto é usado para desinfetar água potável?",opts:["Cloro","Metano","Óleo","Cádmio"],a:0,exp:"O cloro é eficaz contra muitos microrganismos e é amplamente usado em redes de abastecimento."},
+        {q:"O que é bioacumulação?",opts:["Acúmulo de substâncias químicas em organismos ao longo do tempo","Processo de lavagem de roupas","Separação por decantação","Quebra rápida de poluentes"],a:0,exp:"Substâncias como metais podem concentrar-se nos tecidos de um organismo com o tempo."},
+        {q:"Como a cobertura vegetal protege rios?",opts:["Aumenta assoreamento","Reduz erosão e filtra poluentes","Aumenta temperatura","Não tem efeito"],a:1,exp:"Raízes estabilizam o solo e a vegetação atua como filtro de sedimentos e nutrientes."},
+        {q:"Qual é a consequência da alta turbidez?",opts:["Mais luz penetrando na água","Menos fotossíntese e estresse para organismos","Aumento do oxigênio","Melhor qualidade da água"],a:1,exp:"Partículas em suspensão bloqueiam luz, reduzindo fotossíntese e afetando ecossistemas aquáticos."}
+      ],
+      dificil: [
+        {q:"O que é fenômeno de \"limite de solubilidade\" em água?",opts:["Quantidade máxima de soluto que se dissolve em uma quantidade fixa de solvente a uma temperatura dada","Quantidade mínima que pode se dissolver","Quantidade que sempre evapora","Não existe limite"],a:0,exp:"A solubilidade depende de temperatura e pressão; além do limite, o soluto precipita."},
+        {q:"Qual é o efeito do aumento de temperatura na solubilidade do oxigênio em água?",opts:["Aumenta solubilidade","Diminui solubilidade","Não muda","Oxigênio se transforma em outro gás"],a:1,exp:"Oxigênio dissolvido diminui com o aumento da temperatura, reduzindo disponibilidade para organismos."},
+        {q:"O que são \"POPs\" (poluentes orgânicos persistentes)?",opts:["Poluentes que se degradam rapidamente","Substâncias orgânicas que persistem no ambiente e bioacumulam","Novo tipo de fertilizante","Microalgas"],a:1,exp:"POPs como DDT persistem e se acumulam na cadeia alimentar, sendo muito perigosos."},
+        {q:"Qual técnica analítica é usada para identificar metais traço?",opts:["Espectrometria de absorção atômica (AAS)","pHmetro","Termômetro","Refratometria"],a:0,exp:"AAS é sensível para detectar concentrações muito baixas de metais em amostras."},
+        {q:"O que é \"zona fótica\" em um corpo d'água?",opts:["Camada onde há luz suficiente para fotossíntese","Camada sem luz","Região subterrânea","Área de sedimentos"],a:0,exp:"A zona fótica recebe luz e permite crescimento de plantas aquáticas e algas fotossintéticas."},
+        {q:"Qual processo reduz nitratos em ambientes anóxicos?",opts:["Nitrificação","Denitrificação","Calagem","Floculação"],a:1,exp:"Denitrificação converte nitrato em nitrogênio gasoso em condições pouco oxigenadas."},
+        {q:"O que é \"capacidade tampão\" de uma água?",opts:["Facilidade com que o pH muda quando ácidos ou bases são adicionados","Velocidade de corrente","Quantidade de oxigênio","Temperatura da água"],a:0,exp:"Tampão indica resistência do pH a variações; águas com alto bicarbonato têm maior capacidade tampão."},
+        {q:"Qual composto derivado de petróleo é tóxico e tende a acumular-se em sedimentos?",opts:["Hidrocarbonetos policíclicos aromáticos (HPAs)","Sal marinho","Cloreto de sódio","Etanol"],a:0,exp:"HPAs são persistentes e se ligam a partículas e sedimentos, afetando organismos bentônicos."},
+        {q:"O que é \"biomagnificação\"?",opts:["Aumento da concentração de substâncias tóxicas ao longo da cadeia alimentar","Diminuição de poluentes na cadeia alimentar","Separação de sedimentos","Filtração natural"],a:0,exp:"Predadores topo de cadeia acumulam maiores concentrações de toxinas presentes em presas."},
+        {q:"Qual íon é comumente medido para avaliar salinidade?",opts:["Na+ (sódio)","Ca2+","Mg2+","K+"],a:0,exp:"O sódio é um dos principais íons que compõem a salinidade da água."},
+        {q:"O que é oxidação avançada no tratamento de água?",opts:["Uso de processos que geram radicais livres para degradar contaminantes","Fermentação","Decantação simples","Filtração por areia"],a:0,exp:"Processos como ozonização e UV/H2O2 geram radicais que oxidam contaminantes persistentes."},
+        {q:"Qual parâmetro indica processo de deoxigenação por decomposição microbiana?",opts:["Baixa DBO","Alta DBO","pH 7","Baixa turbidez"],a:1,exp:"Alta DBO significa maior consumo de oxigênio pela decomposição, levando à desoxigenação."},
+        {q:"Como se chama a transformação de sulfato em sulfeto por bactérias?",opts:["Sulfatação","Sulfitação","Redução de sulfato (dessorção bacteriana)","Redução de sulfato (sulfateredução)"],a:3,exp:"Sulfateredução é realizada por bactérias anaeróbias que reduzem SO4(2-) a S2-."},
+        {q:"Por que o monitoramento de metais traço é importante?",opts:["Eles são sempre inofensivos","Podem ser tóxicos em concentrações baixas e persistir no ambiente","Não se ligam a organismos","Eles evaporam rapidamente"],a:1,exp:"Metais traço podem acumular e causar efeitos crônicos em organismos e ecossistemas."},
+        {q:"Qual processo natural pode remover poluentes através de plantas e solo?",opts:["Fitorremediação","Incineração","Dessalinização","Cloração"],a:0,exp:"Fitorremediação usa plantas para absorver ou degradar contaminantes no solo e água."}
+      ]
+    };
+
+    // Estado do jogo
+    let state = {
+      cat: "facil",
+      qIndex: 0,
+      players: [{name:"Jogador 1",score:0},{name:"Jogador 2",score:0}],
+      currentPlayer: 0,
+      roundQuestions: [],
+      paused: false,
+      showCorrectAlways: false
+    };
+
+    const el = {
+      question: document.getElementById("question"),
+      choices: document.getElementById("choices"),
+      hint: document.getElementById("hint"),
+      nextBtn: document.getElementById("next"),
+      playersWrap: document.getElementById("players"),
+      turn: document.getElementById("turn"),
+      eventsList: document.getElementById("eventsList"),
+      playerCount: document.getElementById("playerCount"),
+      playerNames: document.getElementById("playerNames"),
+      applyPlayers: document.getElementById("applyPlayers"),
+      showAnswers: document.getElementById("showAnswers")
+    };
+
+    // Util: log de eventos
+    function logEvent(text){
+      const div = document.createElement("div");
+      div.className = "event-item";
+      const ts = new Date().toLocaleTimeString();
+      div.textContent = `[${ts}] ${text}`;
+      el.eventsList.prepend(div);
+    }
+
+    // Aplicar jogadores (quantidade e nomes)
+    el.applyPlayers.addEventListener("click",()=>{
+      const count = Number(el.playerCount.value);
+      const namesRaw = el.playerNames.value.trim();
+      let names = [];
+      if(namesRaw.length){
+        names = namesRaw.split(",").map(s=>s.trim()).filter(Boolean).slice(0,count);
+      }
+      state.players = Array.from({length:count},(_,i)=>({
+        name: names[i] || `Jogador ${i+1}`,
+        score: 0
+      }));
+      state.currentPlayer = 0;
+      renderPlayers();
+      updateTurn();
+      logEvent(`Jogadores definidos: ${state.players.map(p=>p.name).join(", ")}`);
+    });
+
+    // Troca de categoria
+    document.querySelectorAll(".cat").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        document.querySelectorAll(".cat").forEach(b=>b.classList.remove("active"));
+        btn.classList.add("active");
+        startCategory(btn.dataset.cat);
+      });
+    });
+
+    function startCategory(cat){
+      state.cat = cat;
+      state.roundQuestions = DB[cat] || [];
+      state.qIndex = 0;
+      state.currentPlayer = 0;
+      state.paused = false;
+      renderPlayers();
+      renderQuestion();
+      updateTurn();
+      logEvent(`Categoria iniciada: ${cat} (${state.roundQuestions.length} perguntas)`);
+    }
+
+    function renderPlayers(){
+      el.playersWrap.innerHTML = "";
+      state.players.forEach((p,i)=>{
+        const div = document.createElement("div");
+        div.className = "player-card" + (i===state.currentPlayer ? " active" : "");
+        div.textContent = `${p.name}: ${p.score} pts`;
+        el.playersWrap.appendChild(div);
+      });
+    }
+
+    function updateTurn(){
+      el.turn.textContent = `Vez: ${state.players[state.currentPlayer]?.name || "—"}`;
+    }
+
+    function renderQuestion(){
+      const q = state.roundQuestions[state.qIndex];
+      if(!q){
+        el.question.textContent = "Sem perguntas nesta categoria.";
+        el.choices.innerHTML = "";
+        el.hint.textContent = "";
+        el.nextBtn.disabled = true;
+        return;
+      }
+      el.question.textContent = q.q;
+      el.choices.innerHTML = "";
+      q.opts.forEach((opt,i)=>{
+        const btn = document.createElement("button");
+        btn.className = "choice";
+        btn.textContent = opt;
+        btn.dataset.index = i;
+        btn.addEventListener("click",()=>selectChoice(btn,q));
+        el.choices.appendChild(btn);
+      });
+      el.hint.textContent = "A explicação aparecerá aqui após responder.";
+      el.nextBtn.disabled = true;
+      state.paused = false; // garante que se possa responder
+      logEvent(`Pergunta ${state.qIndex+1}/${state.roundQuestions.length}: exibida`);
+    }
+
+    function selectChoice(btn,q){
+      if(state.paused) return;
+      state.paused = true;
+
+      Array.from(el.choices.children).forEach(b=>b.disabled=true);
+      const chosen = Number(btn.dataset.index);
+      const currentP = state.players[state.currentPlayer];
+
+      if(chosen === q.a){
+        btn.classList.add("correct");
+        currentP.score += 10;
+        el.hint.textContent = `Correto! +10 pts. Explicação: ${q.exp}`;
+        logEvent(`${currentP.name} acertou (+10 pts)`);
+      } else {
+        btn.classList.add("wrong");
+        const correctBtn = Array.from(el.choices.children).find(b=>Number(b.dataset.index)===q.a);
+        if(correctBtn) correctBtn.classList.add("correct");
+        el.hint.textContent = `Errado. Explicação: ${q.exp}`;
+        logEvent(`${currentP.name} errou`);
+      }
+      renderPlayers();
+      el.nextBtn.disabled = false;
+    }
+
+    el.nextBtn.addEventListener("click",()=>{
+      // botão Próxima: avança pergunta e alterna jogador
+      state.paused = false;
+      state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+      state.qIndex++;
+      updateTurn();
+
+      if(state.qIndex >= state.roundQuestions.length){
+        el.question.textContent = "Fim da categoria!";
+        el.choices.innerHTML = "";
+        el.hint.textContent = "Parabéns, guardiões!";
+        el.nextBtn.disabled = true;
+        logEvent(`Categoria concluída. Placar final: ${state.players.map(p=>`${p.name} ${p.score}pts`).join(" | ")}`);
+      } else {
+        renderQuestion();
+      }
+    });
+
+    document.getElementById("restart").addEventListener("click",()=>{
+      state.players.forEach(p=>p.score=0);
+      startCategory(state.cat);
+      logEvent("Jogo reiniciado");
+    });
+
+    // Mostrar respostas (marca o correto sem pontuar)
+    el.showAnswers.addEventListener("click",()=>{
+      const q = state.roundQuestions[state.qIndex];
+      if(!q) return;
+      Array.from(el.choices.children).forEach(b=>b.classList.remove("correct","wrong"));
+      const correctBtn = Array.from(el.choices.children).find(b=>Number(b.dataset.index)===q.a);
+      if(correctBtn) correctBtn.classList.add("correct");
+      logEvent("Resposta correta destacada");
+    });
+  </script>
+</body>
+</html>
